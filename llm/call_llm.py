@@ -32,6 +32,16 @@ from langchain.utils import get_from_dict_or_env
 
 import websocket  # 使用websocket_client
 
+# ===== 中转 API（OpenAI 兼容通道）配置 =====
+# 提前加载 .env，保证 OPENAI_API_BASE 等配置在 import 时即可用
+_ = load_dotenv(find_dotenv())
+
+# 所有走 OpenAI 兼容通道（官方或中转）的模型名，可按你中转平台支持的模型自行增删
+OPENAI_MODEL_LIST = [
+    "gpt-3.5-turbo", "gpt-3.5-turbo-16k-0613", "gpt-3.5-turbo-0613", "gpt-4", "gpt-4-32k",
+    "gpt-4o-mini", "gpt-4o", "glm-4", "glm-4-flash", "glm-4-plus", "deepseek-chat",
+]
+
 def get_completion(prompt :str, model :str, temperature=0.1,api_key=None, secret_key=None, access_token=None, appid=None, api_secret=None, max_tokens=2048):
     # 调用大模型获取回复，支持上述三种模型+gpt
     # arguments:
@@ -44,7 +54,7 @@ def get_completion(prompt :str, model :str, temperature=0.1,api_key=None, secret
     # max_tokens : 返回最长序列
     # return: 模型返回，字符串
     # 调用 GPT
-    if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k-0613", "gpt-3.5-turbo-0613", "gpt-4", "gpt-4-32k"]:
+    if model in OPENAI_MODEL_LIST:
         return get_completion_gpt(prompt, model, temperature, api_key, max_tokens)
     elif model in ["ERNIE-Bot", "ERNIE-Bot-4", "ERNIE-Bot-turbo"]:
         return get_completion_wenxin(prompt, model, temperature, api_key, secret_key)
@@ -60,6 +70,8 @@ def get_completion_gpt(prompt : str, model : str, temperature : float, api_key:s
     if api_key == None:
         api_key = parse_llm_api_key("openai")
     openai.api_key = api_key
+    # 中转 API：读取 .env 中的 OPENAI_API_BASE，未配置则默认官方地址
+    openai.api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
     # 具体调用
     messages = [{"role": "user", "content": prompt}]
     response = openai.ChatCompletion.create(

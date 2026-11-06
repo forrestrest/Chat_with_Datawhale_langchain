@@ -9,7 +9,7 @@ import IPython.display   # 用于在 IPython 环境中显示数据，例如图�
 import io                # 用于处理流式数据（例如文件流）
 import gradio as gr
 from dotenv import load_dotenv, find_dotenv
-from llm.call_llm import get_completion
+from llm.call_llm import get_completion, OPENAI_MODEL_LIST
 from database.create_db import create_db_info
 from qa_chain.Chat_QA_chain_self import Chat_QA_chain_self
 from qa_chain.QA_chain_self import QA_chain_self
@@ -22,7 +22,7 @@ import re
 # 这允许您使用 os.environ 来读取在 .env 文件中设置的环境变量
 _ = load_dotenv(find_dotenv())
 LLM_MODEL_DICT = {
-    "openai": ["gpt-3.5-turbo", "gpt-3.5-turbo-16k-0613", "gpt-3.5-turbo-0613", "gpt-4", "gpt-4-32k"],
+    "openai": OPENAI_MODEL_LIST,  # 中转 API 支持的模型统一走 OpenAI 兼容通道
     "wenxin": ["ERNIE-Bot", "ERNIE-Bot-4", "ERNIE-Bot-turbo"],
     "xinhuo": ["Spark-1.5", "Spark-2.0"],
     "zhipuai": ["chatglm_pro", "chatglm_std", "chatglm_lite"]
