@@ -9,7 +9,7 @@ import IPython.display   # 用于在 IPython 环境中显示数据，例如图�
 import io                # 用于处理流式数据（例如文件流）
 import gradio as gr
 from dotenv import load_dotenv, find_dotenv
-from llm.call_llm import get_completion, OPENAI_MODEL_LIST
+from llm.call_llm import get_completion, OPENAI_MODEL_LIST, get_supported_models
 from database.create_db import create_db_info
 from qa_chain.Chat_QA_chain_self import Chat_QA_chain_self
 from qa_chain.QA_chain_self import QA_chain_self
@@ -21,27 +21,35 @@ import re
 # 寻找 .env 文件并加载它的内容
 # 这允许您使用 os.environ 来读取在 .env 文件中设置的环境变量
 _ = load_dotenv(find_dotenv())
-LLM_MODEL_DICT = {
-    "openai": OPENAI_MODEL_LIST,  # 中转 API 支持的模型统一走 OpenAI 兼容通道
-    "wenxin": ["ERNIE-Bot", "ERNIE-Bot-4", "ERNIE-Bot-turbo"],
-    "xinhuo": ["Spark-1.5", "Spark-2.0"],
-    "zhipuai": ["chatglm_pro", "chatglm_std", "chatglm_lite"]
-}
+# 启动时从中转 API 的 /models 端点实时拉取可用模型，失败则回退默认名单
+_openai_models = get_supported_models() or OPENAI_MODEL_LIST
 
+# 所有模型统一走 OpenAI 兼容通道（官方或中转），由 /models 动态提供
+LLM_MODEL_LIST = _openai_models
+INIT_LLM = _openai_models[0] if _openai_models else "gpt-4o-mini"
 
-LLM_MODEL_LIST = sum(list(LLM_MODEL_DICT.values()),[])
-INIT_LLM = "chatglm_std"
-EMBEDDING_MODEL_LIST = ['zhipuai', 'openai', 'm3e']
+def refresh_models(current_model: str = None):
+    """供界面「刷新模型列表」按钮调用：重新拉取并更新下拉框"""
+    models = get_supported_models() or OPENAI_MODEL_LIST
+    value = current_model if current_model in models else models[0]
+    return gr.update(choices=models, value=value)
+EMBEDDING_MODEL_LIST = ['m3e', 'api']  # m3e=本地模型；api=自部署 Embedding 服务（.env 配置地址）
 INIT_EMBEDDING_MODEL = "m3e"
-DEFAULT_DB_PATH = "./knowledge_db"
-DEFAULT_PERSIST_PATH = "./vector_db/chroma"
-AIGC_AVATAR_PATH = "./figures/aigc_avatar.png"
-DATAWHALE_AVATAR_PATH = "./figures/datawhale_avatar.png"
-AIGC_LOGO_PATH = "./figures/aigc_logo.png"
-DATAWHALE_LOGO_PATH = "./figures/datawhale_logo.png"
+# 数据库路径锚定到项目根目录：无论从哪个目录启动，读写都是同一个向量库
+# （否则从 serve/ 和从项目根启动会各建各的库，导致"明明向量化了却查不到"）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "knowledge_db")
+DEFAULT_PERSIST_PATH = os.path.join(BASE_DIR, "vector_db", "chroma")
+# 界面图片资源：基于项目根目录定位；文件缺失时返回 None，界面优雅降级（不阻塞启动）
+def _asset(name):
+    p = os.path.join(BASE_DIR, "figures", name)
+    return p if os.path.exists(p) else None
 
-def get_model_by_platform(platform):
-    return LLM_MODEL_DICT.get(platform, "")
+AIGC_AVATAR_PATH = _asset("aigc_avatar.png")
+DATAWHALE_AVATAR_PATH = _asset("datawhale_avatar.png")
+AIGC_LOGO_PATH = _asset("aigc_logo.png")
+DATAWHALE_LOGO_PATH = _asset("datawhale_logo.png")
+
 class Model_center():
     """
     存储问答 Chain 的对象 
@@ -53,7 +61,7 @@ class Model_center():
         self.chat_qa_chain_self = {}
         self.qa_chain_self = {}
 
-    def chat_qa_chain_self_answer(self, question: str, chat_history: list = [], model: str = "openai", embedding: str = "openai", temperature: float = 0.0, top_k: int = 4, history_len: int = 3, file_path: str = DEFAULT_DB_PATH, persist_path: str = DEFAULT_PERSIST_PATH):
+    def chat_qa_chain_self_answer(self, question: str, chat_history: list = [], model: str = "glm-5.3-flash", embedding: str = "m3e", temperature: float = 0.0, top_k: int = 4, history_len: int = 3, file_path: str = DEFAULT_DB_PATH, persist_path: str = DEFAULT_PERSIST_PATH):
         """
         调用带历史记录的问答链进行回答
         """
@@ -68,7 +76,7 @@ class Model_center():
         except Exception as e:
             return e, chat_history
 
-    def qa_chain_self_answer(self, question: str, chat_history: list = [], model: str = "openai", embedding="openai", temperature: float = 0.0, top_k: int = 4, file_path: str = DEFAULT_DB_PATH, persist_path: str = DEFAULT_PERSIST_PATH):
+    def qa_chain_self_answer(self, question: str, chat_history: list = [], model: str = "glm-5.3-flash", embedding: str = "m3e", temperature: float = 0.0, top_k: int = 4, file_path: str = DEFAULT_DB_PATH, persist_path: str = DEFAULT_PERSIST_PATH):
         """
         调用不带历史记录的问答链进行回答
         """
@@ -151,6 +159,13 @@ def respond(message, chat_history, llm, history_len=3, temperature=0.1, max_toke
 
 model_center = Model_center()
 
+def on_init_db(files, embeddings):
+    """【知识库文件向量化】按钮：建库完成后清除缓存的问答链，让下次提问加载最新向量库"""
+    result = create_db_info(files, embeddings)
+    model_center.qa_chain_self.clear()
+    model_center.chat_qa_chain_self.clear()
+    return result
+
 block = gr.Blocks()
 with block as demo:
     with gr.Row(equal_height=True):           
@@ -164,7 +179,8 @@ with block as demo:
 
     with gr.Row():
         with gr.Column(scale=4):
-            chatbot = gr.Chatbot(height=400, show_copy_button=True, show_share_button=True, avatar_images=(AIGC_AVATAR_PATH, DATAWHALE_AVATAR_PATH))
+            # 注：gradio 3.40.1 的 Chatbot 不支持 avatar_images 参数，头像资源暂不启用
+            chatbot = gr.Chatbot(height=400, show_copy_button=True, show_share_button=True)
             # 创建一个文本框组件，用于输入 prompt。
             msg = gr.Textbox(label="Prompt/问题")
 
@@ -218,8 +234,11 @@ with block as demo:
                                          label="Embedding model",
                                          value=INIT_EMBEDDING_MODEL)
 
-        # 设置初始化向量数据库按钮的点击事件。当点击时，调用 create_db_info 函数，并传入用户的文件和希望使用的 Embedding 模型。
-        init_db.click(create_db_info,
+                refresh_models_btn = gr.Button("🔄 从 API 刷新模型列表")
+
+        # 设置初始化向量数据库按钮的点击事件。当点击时，调用 on_init_db 函数：
+        # 向量化 → 在输入框显示结果 → 清除旧问答链缓存
+        init_db.click(on_init_db,
                       inputs=[file, embeddings], outputs=[msg])
 
         # 设置按钮的点击事件。当点击时，调用上面定义的 chat_qa_chain_self_answer 函数，并传入用户的消息和聊天历史记录，然后更新文本框和聊天机器人组件。
@@ -236,6 +255,9 @@ with block as demo:
         # 设置文本框的提交事件（即按下Enter键时）。功能与上面的 llm_btn 按钮点击事件相同。
         msg.submit(respond, inputs=[
                    msg, chatbot,  llm, history_len, temperature], outputs=[msg, chatbot], show_progress="hidden")
+        # 从 API 重新拉取模型列表，更新下拉框选项
+        refresh_models_btn.click(refresh_models, inputs=[llm], outputs=[llm])
+
         # 点击后清空后端存储的聊天记录
         clear.click(model_center.clear_history)
     gr.Markdown("""提醒：<br>

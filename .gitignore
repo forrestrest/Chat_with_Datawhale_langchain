@@ -1,2 +1,6 @@
 .env
 __pycache__/
+vector_db/
+*.pyc
+.idea/
+vector_db_stale_backup_1215/

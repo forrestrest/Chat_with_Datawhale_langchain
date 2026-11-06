@@ -10,10 +10,10 @@ from langchain.document_loaders import UnstructuredMarkdownLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.document_loaders import PyMuPDFLoader
 from langchain.vectorstores import Chroma
-# 首先实现基本配置
-
-DEFAULT_DB_PATH = "./knowledge_db"
-DEFAULT_PERSIST_PATH = "./vector_db"
+# 首先实现基本配置（锚定到项目根目录，避免受启动目录影响）
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DB_PATH = os.path.join(_ROOT, "knowledge_db")
+DEFAULT_PERSIST_PATH = os.path.join(_ROOT, "vector_db", "chroma")
 
 
 def get_files(dir_path):
@@ -43,10 +43,17 @@ def file_loader(file, loaders):
     return
 
 
-def create_db_info(files=DEFAULT_DB_PATH, embeddings="openai", persist_directory=DEFAULT_PERSIST_PATH):
-    if embeddings == 'openai' or embeddings == 'm3e' or embeddings =='zhipuai':
+def create_db_info(files=DEFAULT_DB_PATH, embeddings="m3e", persist_directory=DEFAULT_PERSIST_PATH):
+    """向量化按钮入口：完成后向前端返回结果提示（成功/失败及存储位置）"""
+    if files is None:
+        return "请先在右侧上传知识库目录或文件，再点击【知识库文件向量化】"
+    n_files = len(files) if isinstance(files, list) else 1
+    try:
         vectordb = create_db(files, persist_directory, embeddings)
-    return ""
+    except Exception as e:
+        return f"向量化失败：{type(e).__name__}: {e}"
+    chunks = getattr(vectordb, "_chunk_count", "?")
+    return f"向量化完成：{n_files} 个源文件 → {chunks} 个文本块，已存入 {os.path.abspath(persist_directory)}"
 
 
 def create_db(files=DEFAULT_DB_PATH, persist_directory=DEFAULT_PERSIST_PATH, embeddings="openai"):
@@ -76,16 +83,15 @@ def create_db(files=DEFAULT_DB_PATH, persist_directory=DEFAULT_PERSIST_PATH, emb
     split_docs = text_splitter.split_documents(docs)
     if type(embeddings) == str:
         embeddings = get_embedding(embedding=embeddings)
-    # 定义持久化路径
-    persist_directory = './vector_db/chroma'
-    # 加载数据库
+    # 使用调用方传入的持久化路径（与问答链读取的路径保持一致），不再硬编码
     vectordb = Chroma.from_documents(
     documents=split_docs,
     embedding=embeddings,
     persist_directory=persist_directory  # 允许我们将persist_directory目录保存到磁盘上
-    ) 
+    )
 
     vectordb.persist()
+    vectordb._chunk_count = len(split_docs)  # 供前端展示向量化结果
     return vectordb
 
 
