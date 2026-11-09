@@ -152,9 +152,9 @@ Invoke-RestMethod -Uri http://127.0.0.1:8000/ -Method Post -ContentType "applica
 1. 大模型调用统一为 OpenAI 兼容通道（官方 / 中转），移除文心、讯飞星火、智谱旧版 SDK 封装
 2. 模型列表由 `/models` 端点动态拉取，界面支持一键刷新
 3. Embedding 通道改为 m3e（本地）+ 自部署服务（OpenAI 兼容），移除 openai 官方与智谱旧版通道
-4. 修复依赖冲突与错误版本号（`requirements.txt` 可直接安装）
-5. 数据路径锚定项目根目录，与启动目录无关；向量化增加结果反馈；向量化后自动刷新问答链缓存
-6. 移除一次性语料生成脚本（README 语料已包含在 `database/readme_db/`）
+4. 修复依赖冲突与错本号（`requirements.txt` 可直接安装）
+5. 数据路径锚定项目录，与启动目录无关；向量化增加结果反馈；向量化后自动刷新问答链缓存
+6. 移除一次性语料生本（README 语料已包含在 `database/readme_db/`）
 
 ## 致谢
 
